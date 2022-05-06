@@ -5,8 +5,10 @@
  */
 
 var app = require('../app');
-var debug = require('debug')('ejer13.1:server');
 var http = require('http');
+var debug = require('debug')('sockets:server');
+var fs = require('fs');
+var https = require('https');
 
 /**
  * Get port from environment and store in Express.
@@ -28,6 +30,60 @@ var server = http.createServer(app);
 server.listen(port);
 server.on('error', onError);
 server.on('listening', onListening);
+
+const httpsServer = https.createServer({
+  key: fs.readFileSync('key1.pem'),
+  cert: fs.readFileSync('cert1.pem')
+}, app);
+
+httpsServer
+    .listen(3030, function () {
+      console.log('Example app listening on port 3030! Go to https://localhost:3030/')
+    });
+
+const io = require('socket.io');
+// create a WebSocket listener for the same server
+const realtimeListener = io(httpsServer);
+
+
+// object to store desktop sockets
+let desktopSocket = null;
+
+// object to store phone sockets
+let phoneSocket = null;
+
+// the socket can be a phone or a desktop
+realtimeListener.on('connection', function (socket) {
+
+  // receives a connect message from a desktop (for this example, we will only have one)
+  socket.on("desktop-connect", function () {
+    console.log("Desktop Connected");
+    desktopSocket = socket;
+  });
+
+  // receives a connect message from a phone
+  socket.on("phone-connect", function () {
+    console.log("Phone Connected");
+    phoneSocket = socket;
+    if (desktopSocket) {
+      // ... informs desktop that a phone has connected
+      desktopSocket.emit('phone-connect');
+    }
+  });
+
+  // receives a connect message from a phone
+  socket.on("phone-move", function (data) {
+    console.log("Phone moved: x=" + data.beta + ", y=" + data.gamma);
+    if (desktopSocket)
+      desktopSocket.emit('phone-move', data);
+  });
+
+  // recibe señal de vibracion desde desktop y se lo envia a phone
+  socket.on("crash", function (data) {
+    if (phoneSocket)
+      phoneSocket.emit('crash', data);
+  });
+});
 
 /**
  * Normalize a port into a number, string, or false.
